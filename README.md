@@ -28,7 +28,7 @@ This repository contains the original Accessibility-based application source. Do
 Requires Android 8.0 or newer and ordinary WhatsApp with an English interface. WhatsApp Business is not supported by the current package checks.
 
 1. Build and install the app.
-2. Verify the configured number and chat header against the official bot you already use. The current source uses `+91 9188957488` and **Kochi Metro Rail Limited**; these values may need maintenance.
+2. Verify the configured number and chat header against the official bot you already use. The current source uses `+91 XXXXXXXXXX` and **Kochi Metro Rail Limited**; these values may need maintenance.
 3. Tap **Enable WhatsApp helper** and enable the named service in Android Accessibility settings.
 4. Return, tap **Start my booking** and confirm the first-run setup.
 5. Keep the phone unlocked and stay in the metro chat while it runs.
