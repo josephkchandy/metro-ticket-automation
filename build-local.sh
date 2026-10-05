@@ -9,9 +9,14 @@ BT="$SDK/build-tools/35.0.0"
 ANDROID_JAR="$SDK/platforms/android-35/android.jar"
 BUILD="$ROOT/build/manual"
 SRC="$ROOT/app/src/main"
+python3 - "$BUILD" <<'PY'
+import pathlib, shutil, sys
+b = pathlib.Path(sys.argv[1])
+if b.exists(): shutil.rmtree(b)
+PY
 mkdir -p "$BUILD/generated" "$BUILD/classes" "$BUILD/dex"
 "$BT/aapt2" compile --dir "$SRC/res" -o "$BUILD/resources.zip"
-"$BT/aapt2" link -I "$ANDROID_JAR" --manifest "$SRC/AndroidManifest.xml" --java "$BUILD/generated" -A "$SRC/assets" --min-sdk-version 26 --target-sdk-version 35 --version-code 1 --version-name 0.1-prototype -o "$BUILD/resources.apk" "$BUILD/resources.zip"
+"$BT/aapt2" link -I "$ANDROID_JAR" --manifest "$SRC/AndroidManifest.xml" --java "$BUILD/generated" -A "$SRC/assets" --min-sdk-version 26 --target-sdk-version 35 --version-code 3 --version-name 0.3-route-fix -o "$BUILD/resources.apk" "$BUILD/resources.zip"
 if [[ -n "${ECJ_JAR:-}" ]]; then
   java -jar "$ECJ_JAR" -8 -proc:none -classpath "$ANDROID_JAR" -d "$BUILD/classes" "$BUILD/generated/in/joseph/metrosn/R.java" "$SRC/java/in/joseph/metrosn/"*.java
 else

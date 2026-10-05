@@ -21,7 +21,9 @@ The WhatsApp helper stops after 90 seconds or when the user leaves the recognize
 
 The original `0.1-prototype` APK was reported working on the project owner's phone on **5 October 2026**. This is a personal-device test; compatibility across devices and the complete payment flow have not been independently verified.
 
-This repository contains the original Accessibility-based application source. Documentation and ignore rules have been prepared for publication. The private signing key and APK are excluded.
+Version `0.3-route-fix` improves station selection: it identifies fields by their form-control names, clicks the actual Material trigger, waits for dropdown options and committed values, and rechecks both stations before requesting a fare. It recovers if the station form re-renders before the fare request. A transient WebView navigation result is retried within a bounded timeout.
+
+The original APK was tested on the owner's phone; this updated version has automated regression coverage and a verified build, but still needs confirmation on that phone. The private signing key and APK are excluded from the source repository.
 
 ## Setup
 
@@ -75,7 +77,7 @@ The script generates a local prototype signing key when one is missing, using a 
 
 ## Checks
 
-Synthetic tests cover URL validation, route/passenger selection, a single fare request, no purchase-button click, foreign-host rejection, expired links and route changes.
+Synthetic tests cover URL validation, route/passenger selection, a single fare request, no purchase-button click, foreign-host rejection, expired links and route changes. DOM event regressions additionally exercise trigger-only click handlers, generated IDs, reordered fields, hidden duplicates, delayed options and value updates, and an exit-field re-render. These use a simulated DOM with mocked layout rectangles, not a real Android WebView.
 
 ```sh
 node tests/autofill.test.cjs
@@ -86,7 +88,14 @@ javac -d build/policy-tests \
 java -cp build/policy-tests in.joseph.metrosn.BookingPolicyTest
 ```
 
-The original APK also passed resource linking, Java compilation, DEX creation and signature verification. These checks do not replace real-device testing.
+For the optional DOM tests, install jsdom in your development environment (a test dependency, not an app dependency):
+
+```sh
+npm install --no-save jsdom
+node tests/autofill.dom.test.cjs
+```
+
+The updated APK also passed resource linking, Java compilation, DEX creation and signature verification. These checks do not replace real-device testing.
 
 ## Source map
 

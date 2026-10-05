@@ -144,7 +144,7 @@ public final class MainActivity extends Activity {
         });
         try{if(script==null){InputStream in=getAssets().open("autofill.js");ByteArrayOutputStream out=new ByteArrayOutputStream();byte[] b=new byte[4096];int n;while((n=in.read(b))!=-1)out.write(b,0,n);in.close();script=out.toString("UTF-8");}}
         catch(Exception ex){status.setText("Could not load form helper. Finish manually.");web.loadUrl(link);return;}
-        filling=true;fillDeadline=android.os.SystemClock.elapsedRealtime()+65000;int thisRun=++runId;web.loadUrl(link);handler.postDelayed(()->fill(thisRun),600);
+        filling=true;fillDeadline=android.os.SystemClock.elapsedRealtime()+95000;int thisRun=++runId;web.loadUrl(link);handler.postDelayed(()->fill(thisRun),600);
     }
     private void fill(int thisRun){
         if(!filling||web==null||thisRun!=runId)return;
@@ -156,6 +156,10 @@ public final class MainActivity extends Activity {
         }
         web.evaluateJavascript(script,value->{
             if(!filling||thisRun!=runId)return;
+            // A navigation can briefly return null before the new document is ready.
+            if(value==null||"null".equals(value)||"undefined".equals(value)){
+                handler.postDelayed(()->fill(thisRun),500);return;
+            }
             try{Object parsed=new JSONTokener(value).nextValue();if(!(parsed instanceof JSONObject))throw new Exception();
                 JSONObject o=(JSONObject)parsed;status.setText(o.optString("message","Loading…"));
                 if(!"wait".equals(o.optString("state"))){stopFill();return;}
