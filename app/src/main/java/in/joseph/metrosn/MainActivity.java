@@ -119,6 +119,12 @@ public final class MainActivity extends Activity {
         });
         web=new WebView(this);body.addView(web,new LinearLayout.LayoutParams(-1,0,1));setContentView(body);
         WebSettings settings=web.getSettings();settings.setJavaScriptEnabled(true);settings.setDomStorageEnabled(true);
+        // Some payment gateways suppress app-to-app UPI choices when Android WebView's
+        // default user-agent contains the WebView-only "wv" / "Version/4.0" markers.
+        // Keep the same secure WebView session, but advertise the underlying Chromium
+        // browser identity so the gateway can expose Google Pay, PhonePe, SuperMoney, etc.
+        String browserUa=WebSettings.getDefaultUserAgent(this).replace("; wv","").replace("Version/4.0 ","");
+        settings.setUserAgentString(browserUa);
         settings.setAllowFileAccess(false);settings.setAllowContentAccess(false);settings.setMixedContentMode(WebSettings.MIXED_CONTENT_NEVER_ALLOW);
         web.setWebViewClient(new WebViewClient(){
             public boolean shouldOverrideUrlLoading(WebView view,WebResourceRequest req){
