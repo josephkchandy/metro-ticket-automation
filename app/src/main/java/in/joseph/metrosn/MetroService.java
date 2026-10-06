@@ -71,13 +71,18 @@ public final class MetroService extends AccessibilityService {
         if(state!=2||now-changed<1500)return;
         AccessibilityNodeInfo book=null;int bottom=-1;
         for(AccessibilityNodeInfo n:nodes){
-            if(!"Book Ticket".equals(text(n))||!n.isVisibleToUser()||!n.isEnabled())continue;
+            String label=text(n);
+            if(!"Book Ticket".equals(label))label=desc(n);
+            if(!"Book Ticket".equals(label)||!n.isVisibleToUser()||!n.isEnabled())continue;
+
+            // WhatsApp has changed the accessibility class used for bot reply buttons across
+            // releases. Match the exact visible label, then walk only a few ancestors to find
+            // its clickable container instead of requiring the class/resource name to contain
+            // the word "button".
             AccessibilityNodeInfo clickable=n;
-            String kind=String.valueOf(n.getClassName())+" "+String.valueOf(n.getViewIdResourceName());
-            if(!n.isClickable())clickable=n.getParent();
-            if(clickable==null||!clickable.isClickable()||!clickable.isEnabled())continue;
-            kind+=" "+String.valueOf(clickable.getClassName())+" "+String.valueOf(clickable.getViewIdResourceName());
-            if(!kind.toLowerCase(java.util.Locale.ROOT).contains("button"))continue;
+            for(int depth=0;depth<4 && clickable!=null && !clickable.isClickable();depth++)clickable=clickable.getParent();
+            if(clickable==null||!clickable.isClickable()||!clickable.isEnabled()||!clickable.isVisibleToUser())continue;
+
             Rect r=new Rect();n.getBoundsInScreen(r);if(r.bottom>bottom){bottom=r.bottom;book=clickable;}
         }
         if(book!=null){state=3;changed=now;if(!book.performAction(AccessibilityNodeInfo.ACTION_CLICK))abort("Could not tap Book Ticket. Tap it yourself, then share the link.");}
