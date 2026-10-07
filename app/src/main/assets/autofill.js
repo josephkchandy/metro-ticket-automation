@@ -1,7 +1,14 @@
 (function () {
   const wait = message => ({state: 'wait', message});
   const halt = message => ({state: 'halt', message});
-  if (location.protocol !== 'https:' || location.hostname !== 'prutech.org' || location.pathname !== '/KMRL/') {
+  // WebView can briefly report the requested booking URL while JavaScript is still
+  // executing in the previous about:blank document. Treat that as loading, not failure.
+  if (location.protocol === 'about:' || location.href === 'about:blank') {
+    return wait('Waiting for the booking page…');
+  }
+  const host = (location.hostname || '').toLowerCase();
+  const path = (location.pathname || '').replace(/\/+$/, '') || '/';
+  if (location.protocol !== 'https:' || (host !== 'prutech.org' && host !== 'www.prutech.org') || path !== '/KMRL') {
     return halt('Automation stopped outside the booking page.');
   }
   if (!document.body || document.readyState === 'loading') return wait('Waiting for the booking page…');

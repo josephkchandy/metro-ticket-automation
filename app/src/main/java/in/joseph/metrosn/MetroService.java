@@ -1,7 +1,9 @@
 package in.joseph.metrosn;
 
 import android.accessibilityservice.AccessibilityService;
+import android.accessibilityservice.GestureDescription;
 import android.content.Intent;
+import android.graphics.Path;
 import android.graphics.Rect;
 import android.os.Handler;
 import android.os.Looper;
@@ -12,20 +14,24 @@ import android.widget.Toast;
 import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
+import java.util.Locale;
 import java.util.Set;
 
 /** Experimental, English WhatsApp UI only. Never reads or acts while idle. */
 public final class MetroService extends AccessibilityService {
     public static MetroService instance;
+    private static final int MAX_BOOK_ATTEMPTS=3;
+    private static final long BOOK_RESPONSE_WAIT_MS=8000;
     private final Handler handler = new Handler(Looper.getMainLooper());
     private final Set<String> oldLinks = new HashSet<>();
-    private int state; // 0 idle, 1 send Hi, 2 wait Book Ticket, 3 wait new link
+    private int state; // 0 idle, 1 send Hi, 2 wait/tap Book Ticket, 3 wait new link
+    private int bookAttempts;
     private long deadline, changed;
     private boolean enteredChat;
     private final Runnable tick = new Runnable() { public void run() { inspect(); if(state!=0)handler.postDelayed(this,500); } };
     protected void onServiceConnected(){instance=this;}
     public void arm(){stop();state=1;deadline=SystemClock.elapsedRealtime()+90000;changed=SystemClock.elapsedRealtime();handler.postDelayed(tick,600);}
-    public void stop(){state=0;enteredChat=false;oldLinks.clear();handler.removeCallbacks(tick);}
+    public void stop(){state=0;bookAttempts=0;enteredChat=false;oldLinks.clear();handler.removeCallbacks(tick);}
     public void onInterrupt(){stop();}
     public void onDestroy(){stop();instance=null;super.onDestroy();}
     public void onAccessibilityEvent(AccessibilityEvent event){/* One polling loop avoids duplicate taps. */}
@@ -54,33 +60,84 @@ public final class MetroService extends AccessibilityService {
             AccessibilityNodeInfo send=null;
             for(AccessibilityNodeInfo n:nodes)if(n.isEnabled()&&n.isClickable()&&"Send".equals(desc(n)))send=n;
             if(send==null)return;
-            state=2;changed=now; // Advance before the click; no automatic retry can send twice.
+            state=2;changed=now; // Advance before the click; no automatic retry can send Hi twice.
             if(!send.performAction(AccessibilityNodeInfo.ACTION_CLICK))abort("Could not press Send. Finish in WhatsApp, then share the link.");
             return;
         }
-        // Remember older links until the Book Ticket action is sent.
-        if(state==2)for(AccessibilityNodeInfo n:nodes){String link=BookingPolicy.extract(text(n));if(link!=null)oldLinks.add(link);}
-        if(state==3)for(int i=nodes.size()-1;i>=0;i--){String link=BookingPolicy.extract(text(nodes.get(i)));
-            if(link!=null&&!oldLinks.contains(link)){
-                stop();Intent open=new Intent(this,MainActivity.class).setAction(MainActivity.OPEN_LINK)
-                    .putExtra("link",link).putExtra("nonce",MainActivity.nonce(this))
-                    .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK|Intent.FLAG_ACTIVITY_SINGLE_TOP);
-                startActivity(open);return;
+
+        // Snapshot existing links only before the first Book Ticket attempt. During retries we
+        // must not accidentally classify a just-arrived fresh link as an old one.
+        if(state==2&&bookAttempts==0)for(AccessibilityNodeInfo n:nodes){String link=BookingPolicy.extract(text(n));if(link!=null)oldLinks.add(link);}
+
+        if(state==3){
+            for(int i=nodes.size()-1;i>=0;i--){
+                String link=BookingPolicy.extract(text(nodes.get(i)));
+                if(link!=null&&!oldLinks.contains(link)){
+                    stop();Intent open=new Intent(this,MainActivity.class).setAction(MainActivity.OPEN_LINK)
+                        .putExtra("link",link).putExtra("nonce",MainActivity.nonce(this))
+                        .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK|Intent.FLAG_ACTIVITY_SINGLE_TOP);
+                    startActivity(open);return;
+                }
             }
+            // Accessibility can report ACTION_CLICK as successful before WhatsApp actually
+            // activates a bot reply. Give the bot time to answer, then retry with a different
+            // input method instead of waiting forever for a link that will never arrive.
+            if(now-changed<BOOK_RESPONSE_WAIT_MS)return;
+            if(bookAttempts>=MAX_BOOK_ATTEMPTS){abort("Book Ticket did not respond after 3 attempts. Tap it manually, then share the fresh link.");return;}
+            state=2;changed=now;
+            return;
         }
+
         if(state!=2||now-changed<1500)return;
-        AccessibilityNodeInfo book=null;int bottom=-1;
-        for(AccessibilityNodeInfo n:nodes){
-            if(!"Book Ticket".equals(text(n))||!n.isVisibleToUser()||!n.isEnabled())continue;
-            AccessibilityNodeInfo clickable=n;
-            String kind=String.valueOf(n.getClassName())+" "+String.valueOf(n.getViewIdResourceName());
-            if(!n.isClickable())clickable=n.getParent();
-            if(clickable==null||!clickable.isClickable()||!clickable.isEnabled())continue;
-            kind+=" "+String.valueOf(clickable.getClassName())+" "+String.valueOf(clickable.getViewIdResourceName());
-            if(!kind.toLowerCase(java.util.Locale.ROOT).contains("button"))continue;
-            Rect r=new Rect();n.getBoundsInScreen(r);if(r.bottom>bottom){bottom=r.bottom;book=clickable;}
+        AccessibilityNodeInfo book=findBookTicket(nodes);
+        if(book==null)return;
+
+        bookAttempts++;
+        boolean sent;
+        if(bookAttempts==1){
+            sent=book.performAction(AccessibilityNodeInfo.ACTION_CLICK);
+            if(!sent)sent=tapCenter(book);
+        }else{
+            // A coordinate gesture is intentionally used only after a verified labelled node
+            // failed to produce a fresh link, so it cannot tap an arbitrary WhatsApp location.
+            sent=tapCenter(book);
+            if(!sent)sent=book.performAction(AccessibilityNodeInfo.ACTION_CLICK);
         }
-        if(book!=null){state=3;changed=now;if(!book.performAction(AccessibilityNodeInfo.ACTION_CLICK))abort("Could not tap Book Ticket. Tap it yourself, then share the link.");}
+        if(!sent){
+            if(bookAttempts>=MAX_BOOK_ATTEMPTS)abort("Could not activate Book Ticket. Tap it manually, then share the fresh link.");
+            else changed=now;
+            return;
+        }
+        state=3;changed=now;
+    }
+
+    private AccessibilityNodeInfo findBookTicket(List<AccessibilityNodeInfo> nodes){
+        AccessibilityNodeInfo best=null;int bottom=-1;
+        for(AccessibilityNodeInfo n:nodes){
+            if(!bookLabel(text(n))&&!bookLabel(desc(n)))continue;
+            if(!n.isVisibleToUser()||!n.isEnabled())continue;
+
+            AccessibilityNodeInfo clickable=n;
+            for(int depth=0;depth<5&&clickable!=null&&!clickable.isClickable();depth++)clickable=clickable.getParent();
+            if(clickable==null||!clickable.isClickable()||!clickable.isEnabled()||!clickable.isVisibleToUser())continue;
+
+            Rect r=new Rect();n.getBoundsInScreen(r);
+            if(!r.isEmpty()&&r.bottom>bottom){bottom=r.bottom;best=clickable;}
+        }
+        return best;
+    }
+
+    private boolean tapCenter(AccessibilityNodeInfo n){
+        Rect r=new Rect();n.getBoundsInScreen(r);if(r.isEmpty())return false;
+        Path path=new Path();path.moveTo(r.exactCenterX(),r.exactCenterY());
+        GestureDescription gesture=new GestureDescription.Builder()
+            .addStroke(new GestureDescription.StrokeDescription(path,0,80)).build();
+        return dispatchGesture(gesture,null,null);
+    }
+
+    private static boolean bookLabel(String value){
+        if(value==null)return false;
+        return "book ticket".equals(value.trim().replaceAll("\\s+"," ").toLowerCase(Locale.ROOT));
     }
     private static String text(AccessibilityNodeInfo n){return n.getText()==null?"":n.getText().toString().trim();}
     private static String desc(AccessibilityNodeInfo n){return n.getContentDescription()==null?"":n.getContentDescription().toString().trim();}

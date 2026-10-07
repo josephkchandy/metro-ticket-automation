@@ -24,6 +24,8 @@ import android.widget.LinearLayout;
 import android.widget.ScrollView;
 import android.widget.TextView;
 import android.widget.Toast;
+import androidx.webkit.WebSettingsCompat;
+import androidx.webkit.WebViewFeature;
 import org.json.JSONObject;
 import org.json.JSONTokener;
 import java.io.ByteArrayOutputStream;
@@ -119,6 +121,14 @@ public final class MainActivity extends Activity {
         });
         web=new WebView(this);body.addView(web,new LinearLayout.LayoutParams(-1,0,1));setContentView(body);
         WebSettings settings=web.getSettings();settings.setJavaScriptEnabled(true);settings.setDomStorageEnabled(true);
+
+        // Do not disguise WebView as Chrome. Modern Android WebView exposes Payment Request
+        // explicitly; enabling it is the supported path for Google Pay and other registered
+        // Android payment apps. Older WebView versions simply keep the deep-link fallback below.
+        if(WebViewFeature.isFeatureSupported(WebViewFeature.PAYMENT_REQUEST)){
+            WebSettingsCompat.setPaymentRequestEnabled(settings,true);
+        }
+
         settings.setAllowFileAccess(false);settings.setAllowContentAccess(false);settings.setMixedContentMode(WebSettings.MIXED_CONTENT_NEVER_ALLOW);
         web.setWebViewClient(new WebViewClient(){
             public boolean shouldOverrideUrlLoading(WebView view,WebResourceRequest req){
@@ -127,7 +137,8 @@ public final class MainActivity extends Activity {
                 if("https".equals(scheme))return false;
                 if("intent".equals(scheme)||"upi".equals(scheme)||"tez".equals(scheme)||"phonepe".equals(scheme)||"paytmmp".equals(scheme)){
                     stopFill();
-                    // External payment apps are launched only after the user taps on the payment page.
+                    // Fallback for gateways that still use app-specific UPI deep links instead
+                    // of Payment Request. Never launch an external app without a user gesture.
                     if(!req.hasGesture()){notice("Tap your payment option to open its app.");return true;}
                     try{
                         Intent target="intent".equals(scheme)?Intent.parseUri(u.toString(),Intent.URI_INTENT_SCHEME):new Intent(Intent.ACTION_VIEW,u);
